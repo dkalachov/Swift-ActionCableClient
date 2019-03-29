@@ -32,7 +32,7 @@ open class Channel: Hashable, Equatable {
     open var name : String
     
     /// Identifier
-    open var identifier: Dictionary<String, Any>?
+    open private(set) var identifier: String
     
     /// Auto-Subscribe to channel on initialization and re-connect?
     open var autoSubscribe : Bool
@@ -43,28 +43,9 @@ open class Channel: Hashable, Equatable {
     
     /// Subscribed
     open var isSubscribed : Bool {
-        return client.subscribed(uid)
+        return client.subscribed(identifier)
     }
-    
-    /// Unique Identifier
-    open var uid: String {
-        get {
-            //defaults to channel name
-            var channelUID = name
 
-            //if identifier isn't empty, fetch the first value as the channel unique identifier
-            if let dictionary = identifier, dictionary.count > 1 {
-                var identifier = name
-                for key in dictionary.keys.sorted() {
-                    identifier += "-\(key):\(dictionary[key] as? String ?? "")"
-                }
-                channelUID = identifier
-            }
-
-            return channelUID
-        }
-    }
-    
     /// A block called when a message has been received on this channel.
     ///
     /// ```swift
@@ -105,7 +86,27 @@ open class Channel: Hashable, Equatable {
         self.client = client
         self.autoSubscribe = autoSubscribe
         self.shouldBufferActions = shouldBufferActions
-        self.identifier = identifier
+        self.identifier = Channel.identifierForName(name, userInfo: identifier)
+    }
+
+    internal static func identifierForName(_ channelName: String, userInfo: ActionPayload?) -> String {
+        var dict: ActionPayload = userInfo ?? ActionPayload()
+        dict["channel"] = channelName
+        do {
+            let options: JSONSerialization.WritingOptions
+            if #available(iOS 11.0, *) {
+                options = .sortedKeys
+            } else {
+                options = []
+            }
+            let JSONData = try JSONSerialization.data(withJSONObject: dict, options: options)
+            guard let identifierString = String(data: JSONData, encoding: .utf8)
+                else { throw SerializationError.json }
+            return identifierString
+        } catch {
+            debugPrint("Failed to create identifier for channel")
+            return channelName
+        }
     }
     
     open func onReceive(_ action:String, handler: @escaping (OnReceiveClosure)) -> Void {
@@ -201,7 +202,7 @@ open class Channel: Hashable, Equatable {
 }
 
 public func ==(lhs: Channel, rhs: Channel) -> Bool {
-  return (lhs.hashValue == rhs.hashValue) && (lhs.uid == rhs.uid)
+  return (lhs.hashValue == rhs.hashValue) && (lhs.identifier == rhs.identifier)
 }
 
 extension Channel {
